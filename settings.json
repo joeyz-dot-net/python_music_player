@@ -10,14 +10,15 @@
   "SPOTIFY_CLIENT_SECRET": "22a45d06cc694b64bf401e0edf275764",
   "SPOTIFY_SCOPES": "user-read-email user-read-private",
   "FLASK_HOST": "0.0.0.0",
-  "FLASK_PORT": 8000,
+  "FLASK_PORT": 9000,
   "DEBUG": true,
   "MPV_CMD": "c:\\mpv\\mpv.exe --input-ipc-server=\\\\.\\pipe\\mpv-pipe --idle=yes --force-window=no",
   "APP_USERNAME": "admin",
   "APP_PASSWORD": "change_this",
   "current_playing": {
-    "abs_path": "Z:\\ETC\\5 20AM.mp3",
-    "rel": "ETC/5 20AM.mp3",
-    "ts": 1755284594
+    "abs_path": "Z:\\ETC\\Lament of the Highborne.wav",
+    "rel": "ETC/Lament of the Highborne.wav",
+    "index": 85,
+    "ts": 1755286837
   }
 }
