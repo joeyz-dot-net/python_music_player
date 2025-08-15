@@ -1,10 +1,23 @@
 {
   "MUSIC_DIR": "Z:",
   "PIPE_NAME": "\\\\.\\pipe\\mpv-pipe",
-  "ALLOWED_EXTENSIONS": [".mp3", ".wav", ".flac"],
-  "SPOTIFY_CLIENT_ID": "7aa37cc01eaa4bff8593c76c61915352",
-  "SPOTIFY_CLIENT_SECRET": "385dcc586ad44304a98099e4694aae85",
+  "ALLOWED_EXTENSIONS": [
+    ".mp3",
+    ".wav",
+    ".flac"
+  ],
+  "SPOTIFY_CLIENT_ID": "7f2350c8a5a4482fbf6a354e08ea33b0",
+  "SPOTIFY_CLIENT_SECRET": "22a45d06cc694b64bf401e0edf275764",
+  "SPOTIFY_SCOPES": "user-read-email user-read-private",
   "FLASK_HOST": "0.0.0.0",
   "FLASK_PORT": 8000,
-  "DEBUG": true
+  "DEBUG": true,
+  "MPV_CMD": "c:\\mpv\\mpv.exe --input-ipc-server=\\\\.\\pipe\\mpv-pipe --idle=yes --force-window=no",
+  "APP_USERNAME": "admin",
+  "APP_PASSWORD": "change_this",
+  "current_playing": {
+    "abs_path": "Z:\\ETC\\5 20AM.mp3",
+    "rel": "ETC/5 20AM.mp3",
+    "ts": 1755284594
+  }
 }
