@@ -73,13 +73,12 @@ def play():
             AUTO_THREAD.start()
         current_path = PLAYLIST[CURRENT_INDEX]
         send_mpv({"command": ["loadfile", current_path, "replace"]})
-        current_info = {
-            "abs_path": current_path,
-            "name": os.path.basename(current_path),
-            "timestamp": int(time.time())
-        }
-        with open(os.path.join(os.path.dirname(__file__), "current_playing.json"), "w", encoding="utf-8") as f:
-            json.dump(current_info, f, ensure_ascii=False, indent=2)
+        # 使用主应用提供的线程安全写入
+        try:
+            from app import set_current_playing
+            set_current_playing(current_path)
+        except Exception as e:
+            print('[WARN] set_current_playing 调用失败:', e)
         return "OK"
     except Exception as e:
         return f"ERROR: {e}", 400

@@ -13,30 +13,47 @@
     <input type="range" id="volume" min="0" max="100" value="80" oninput="setVolume(this.value)">
   </div>
 
+  <div id="artist-info" style="display:none;max-width:800px;margin:0 auto 20px;padding:14px 18px;background:#1b1b1b;border:1px solid #2a2a2a;border-radius:14px;box-shadow:0 4px 18px #0007;font-size:14px;line-height:1.5;">
+    <div id="artist-info-close" style="float:right;cursor:pointer;font-weight:bold;">✖</div>
+    <div style="display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap;">
+      <img id="artist-info-avatar" src="" alt="artist" style="width:120px;height:120px;border-radius:14px;object-fit:cover;background:#222;box-shadow:0 2px 10px #000;">
+      <div style="flex:1;min-width:200px;">
+        <h2 id="artist-info-name" style="margin:4px 0 8px;font-size:20px;letter-spacing:1px;">Artist</h2>
+        <div id="artist-info-genres" style="margin:4px 0 8px;color:#9cd7b5;font-size:13px;"></div>
+        <div style="display:flex;gap:24px;font-size:13px;margin-top:6px;">
+          <div>🔥 热度 <span id="artist-info-pop"></span></div>
+          <div>👥 关注 <span id="artist-info-follow"></span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   {% macro render_node(node, root=False) %}
   {% if root %}
   <div class="root-node">
     <div class="flex-row-wrap">
       {% for file in node.files %}
-        
+        {% set full_title = file.name.rsplit('.',1)[0] %}
+        {% set short_title = full_title[:12] %}
         <div class="song-card track{% if file.abs == current_file %} playing{% endif %}" onclick="play('{{ file.rel }}')">
-          {{ song_title }}
-          <div class="song-info">{{ song_title }}</div>
+          <img class="album-cover small" src="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f4bf.png" data-track="{{ full_title }}" data-artist="" data-default="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f4bf.png" alt="{{ short_title }}">
+          <div class="song-info">{{ short_title }}</div>
         </div>
       {% endfor %}
     </div>
     <div class="dir-grid">
       {% for dir in node.dirs %}
       <div class="dir-item">
-       
-        <img class="album-cover large" src="{{ artist_photo }}" data-artist="{{ dir.name }}" data-default="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f4bf.png" alt="{{ dir.name }}">
+        {% set repr_track = (dir.files[0].name.rsplit('.',1)[0] if dir.files|length>0 else '') %}
+        <img class="album-cover large" src="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f4bf.png" data-artist="{{ dir.name }}" {% if repr_track %}data-track="{{ repr_track }}"{% endif %} data-default="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f4bf.png" alt="{{ dir.name }}">
         <span class="dir-name">{{ dir.name }}</span>
         <div class="dir-files">
           <div class="flex-row-wrap">
             {% for file in dir.files %}
-              {% set song_title = file.name.rsplit('.',1)[0][:18] %}
+              {% set full_title = file.name.rsplit('.',1)[0] %}
+              {% set song_title = full_title[:18] %}
               <div class="song-card track{% if file.abs == current_file %} playing{% endif %}" onclick="play('{{ file.rel }}')">
-                <img class="album-cover small" src="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f4bf.png" data-artist="{{ dir.name }}" data-track="{{ song_title }}" data-default="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f4bf.png" alt="{{ song_title }}">
+                <img class="album-cover small" src="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f4bf.png" data-artist="{{ dir.name }}" data-track="{{ full_title }}" data-default="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f4bf.png" alt="{{ song_title }}">
                 <div class="song-info">{{ song_title }}<small>{{ dir.name }}</small></div>
               </div>
             {% endfor %}
@@ -52,16 +69,17 @@
   {% else %}
   <details>
     <summary>
-     
-      <img class="album-cover large" src="{{ artist_photo }}" data-artist="{{ node.name }}" data-default="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f4bf.png" alt="{{ node.name }}">
+      {% set repr_track = (node.files[0].name.rsplit('.',1)[0] if node.files|length>0 else '') %}
+      <img class="album-cover large" src="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f4bf.png" data-artist="{{ node.name }}" {% if repr_track %}data-track="{{ repr_track }}"{% endif %} data-default="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f4bf.png" alt="{{ node.name }}">
       <span class="dir-name">{{ node.name }}</span>
     </summary>
     <div class="dir-files">
       <div class="flex-row-wrap">
         {% for file in node.files %}
-          {% set song_title = file.name.rsplit('.',1)[0][:18] %}
+          {% set full_title = file.name.rsplit('.',1)[0] %}
+          {% set song_title = full_title[:18] %}
           <div class="song-card track{% if file.abs == current_file %} playing{% endif %}" onclick="play('{{ file.rel }}')">
-            <img class="album-cover small" src="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f4bf.png" data-artist="{{ node.name }}" data-track="{{ song_title }}" data-default="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f4bf.png" alt="{{ song_title }}">
+            <img class="album-cover small" src="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f4bf.png" data-artist="{{ node.name }}" data-track="{{ full_title }}" data-default="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f4bf.png" alt="{{ song_title }}">
             <div class="song-info">{{ song_title }}<small>{{ node.name }}</small></div>
           </div>
         {% endfor %}
@@ -77,9 +95,9 @@
   {{ render_node(tree, True) }}
 
 <script src="static/main.js"></script>
-</body>
-</html>
 <script>
+// 将当前播放相对路径暴露给前端（若存在）
+const CURRENT_REL = "{{ current_rel|default('') }}";
 function play(rel) {
   const now = Date.now();
   if (now - lastPlayTime < 3000) return; // 3秒内只允许一次播放
@@ -119,58 +137,96 @@ function play(rel) {
     }
 
 document.addEventListener("DOMContentLoaded", function() {
-  // 自动获取网络歌手头像和专辑封面
-  const artistPhotoCache = {};
-  document.querySelectorAll("img.album-cover").forEach(function(img) {
-    const artist = img.getAttribute("data-artist");
-    const track = img.getAttribute("data-track");
-    const defaultUrl = img.getAttribute("data-default");
-    if (!artist) return;
-    // 先尝试本地图片，失败后自动获取网络头像
-    img.onerror = function() {
-      // 歌手头像优先
-      fetch("/artist_image/" + encodeURIComponent(artist))
-        .then(res => res.json())
-        .then(data => {
-          if (data.url) {
-            img.src = data.url;
-            img.style.display = "inline-block";
-            artistPhotoCache[artist] = data.url;
-          } else {
-            img.src = defaultUrl;
-            img.style.display = "inline-block";
-          }
-        })
-        .catch(() => {
-          img.src = defaultUrl;
-          img.style.display = "inline-block";
-        });
+  const defaultDisc = "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f4bf.png";
+
+  // 歌曲封面：优先专辑，再歌手
+  document.querySelectorAll('img.album-cover[data-track]').forEach(img => {
+    const artist = img.getAttribute('data-artist') || '';
+    const track = img.getAttribute('data-track');
+    const def = img.getAttribute('data-default') || defaultDisc;
+    const setDef = () => { img.src = def; };
+    if (!track) { setDef(); return; }
+    const tryArtist = () => {
+      if (!artist) { setDef(); return; }
+      fetch(`/artist_image/${encodeURIComponent(artist)}`)
+        .then(r=>r.json()).then(d=>{ img.src = d.url || def; })
+        .catch(setDef);
     };
-    // 如果有track，尝试获取专辑封面
+    fetch(`/album_cover/${encodeURIComponent(artist)}/${encodeURIComponent(track)}`)
+      .then(r=>r.json())
+      .then(d=>{ if (d.url) { img.src = d.url; } else { tryArtist(); } })
+      .catch(tryArtist);
+  });
+
+  // 目录歌手头像/代表封面：先尝试代表歌曲的专辑封面，再退回歌手头像
+  document.querySelectorAll('.dir-item > img.album-cover.large').forEach(img => {
+    const artist = img.getAttribute('data-artist');
+    const track = img.getAttribute('data-track');
+    const def = img.getAttribute('data-default') || defaultDisc;
+    if (!artist) return;
+    const loadArtist = () => {
+      fetch(`/artist_image/${encodeURIComponent(artist)}`)
+        .then(r=>r.json()).then(d=>{ img.src = d.url || def; })
+        .catch(()=>{ img.src = def; });
+    };
     if (track) {
-      fetch("/album_cover/" + encodeURIComponent(artist) + "/" + encodeURIComponent(track))
-        .then(res => res.json())
-        .then(data => {
-          if (data.url) {
-            img.src = data.url;
-            img.style.display = "inline-block";
-          }
-        });
+      fetch(`/album_cover/${encodeURIComponent(artist)}/${encodeURIComponent(track)}`)
+        .then(r=>r.json())
+        .then(d=>{ if (d.url) { img.src = d.url; } else { loadArtist(); } })
+        .catch(loadArtist);
+    } else {
+      loadArtist();
     }
   });
 
-  // 目录卡片点击展开/收起
-  document.querySelectorAll('.dir-item').forEach(function(item) {
-    item.addEventListener('click', function(e) {
-      // 避免点击歌曲时触发目录展开
+  // 目录展开/收起
+  document.querySelectorAll('.dir-item').forEach(item => {
+    item.addEventListener('click', e => {
       if (e.target.closest('.track')) return;
-      // 只展开当前，收起其他
-      document.querySelectorAll('.dir-item.active').forEach(function(active) {
-        if (active !== item) active.classList.remove('active');
-      });
+      document.querySelectorAll('.dir-item.active').forEach(a=>{ if (a!==item) a.classList.remove('active'); });
       item.classList.toggle('active');
+      const img = item.querySelector('img.album-cover.large');
+      if (img) {
+        const artist = img.getAttribute('data-artist');
+        if (artist) { loadArtistInfo(artist); }
+      }
     });
   });
+
+  // 关闭 artist info
+  document.getElementById('artist-info-close').onclick = () => {
+    document.getElementById('artist-info').style.display = 'none';
+  };
+
+  function loadArtistInfo(artist){
+    fetch(`/artist_info/${encodeURIComponent(artist)}`)
+      .then(r=>r.json())
+      .then(j=>{
+        if (j.status !== 'OK' || !j.data || !j.data.name) return;
+        const box = document.getElementById('artist-info');
+        document.getElementById('artist-info-name').textContent = j.data.name;
+        document.getElementById('artist-info-avatar').src = j.data.image || document.querySelector(`img.album-cover.large[data-artist='${CSS.escape(artist)}']`)?.src || '';
+        const genres = (j.data.genres||[]).map(g=>`<span style="background:#234a33;padding:3px 8px;border-radius:12px;margin:2px;display:inline-block;font-size:12px;">${g}</span>`).join('');
+        document.getElementById('artist-info-genres').innerHTML = genres || '<span style="color:#666;">(无流派信息)</span>';
+        document.getElementById('artist-info-pop').textContent = j.data.popularity ?? '-';
+        document.getElementById('artist-info-follow').textContent = j.data.followers ? j.data.followers.toLocaleString() : '-';
+        box.style.display = 'block';
+        box.scrollIntoView({behavior:'smooth',block:'start'});
+      }).catch(()=>{});
+  }
+  // 页面刷新自动加载：优先当前播放歌曲所属首级目录(假设第一段为歌手)，否则第一个目录
+  (function autoLoadArtist(){
+    let artist = '';
+    if (CURRENT_REL) {
+      const seg = CURRENT_REL.split('/')[0];
+      if (seg) artist = seg;
+    }
+    if (!artist) {
+      const firstImg = document.querySelector('.dir-item > img.album-cover.large');
+      if (firstImg) artist = firstImg.getAttribute('data-artist') || '';
+    }
+    if (artist) loadArtistInfo(artist);
+  })();
 });
   </script>
 </body>

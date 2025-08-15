@@ -4,10 +4,67 @@ from flask import Flask, render_template
 
 
 app = Flask(__name__, template_folder=".")
-MUSIC_DIR = r"Z:"
-PIPE_NAME = r"\\.\pipe\mpv-pipe"
-ALLOWED = {".mp3", ".wav", ".flac"}
+
+# 载入配置
+CONFIG_PATH = os.path.join(os.path.dirname(__file__), "settings.json")
+CONFIG_LOCK = threading.RLock()  # 线程级并发写入锁
+def _load_settings_unlocked():
+    try:
+        with open(CONFIG_PATH, "r", encoding="utf-8") as cf:
+            return json.load(cf)
+    except Exception:
+        return {}
+
+def load_settings():
+    """线程安全读取配置 (浅复制)。"""
+    with CONFIG_LOCK:
+        data = _load_settings_unlocked()
+        return json.loads(json.dumps(data))  # 简单复制防止外部修改
+
+def _atomic_write_settings(data: dict):
+    tmp = CONFIG_PATH + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as wf:
+        json.dump(data, wf, ensure_ascii=False, indent=2)
+    os.replace(tmp, CONFIG_PATH)
+
+def update_settings(patch: dict):
+    """线程安全更新顶层键；原子写入。"""
+    with CONFIG_LOCK:
+        cur = _load_settings_unlocked()
+        cur.update(patch)
+        _atomic_write_settings(cur)
+        return cur
+
+def set_current_playing(abs_path: str):
+    info = {
+        'abs_path': abs_path,
+        'name': os.path.basename(abs_path),
+        'timestamp': int(time.time())
+    }
+    update_settings({'current_playing': info})
+    return info
+
+_cfg = load_settings()
+
+MUSIC_DIR = _cfg.get("MUSIC_DIR", r"Z:")
+PIPE_NAME = _cfg.get("PIPE_NAME", r"\\.\pipe\mpv-pipe")
+ALLOWED = set(_cfg.get("ALLOWED_EXTENSIONS", [".mp3", ".wav", ".flac"]))
 MPV_PROCESS = None  # 全局变量保存MPV进程
+
+# 若上述关键字段在 settings.json 中缺失，则写回默认值，保证文件中显式存在
+_need_persist = False
+if "MUSIC_DIR" not in _cfg:
+    _cfg["MUSIC_DIR"] = MUSIC_DIR; _need_persist = True
+if "PIPE_NAME" not in _cfg:
+    _cfg["PIPE_NAME"] = PIPE_NAME; _need_persist = True
+if "ALLOWED_EXTENSIONS" not in _cfg:
+    _cfg["ALLOWED_EXTENSIONS"] = sorted(list(ALLOWED)); _need_persist = True
+if _need_persist:
+    update_settings({
+        "MUSIC_DIR": _cfg["MUSIC_DIR"],
+        "PIPE_NAME": _cfg["PIPE_NAME"],
+        "ALLOWED_EXTENSIONS": _cfg["ALLOWED_EXTENSIONS"],
+    })
 
 # 播放列表与自动续播所需全局变量（放在前面，供 player.py 导入时使用）
 PLAYLIST = []            # 真实绝对路径
@@ -107,13 +164,19 @@ def send_mpv(cmd: dict):
 def index():
     tree = build_tree(MUSIC_DIR)
     current_file = ""
+    current_rel = ""
+    # 从 settings.json 读取当前播放
     try:
-        with open(os.path.join(os.path.dirname(__file__), "current_playing.json"), "r", encoding="utf-8") as f:
-            current_info = json.load(f)
-            current_file = current_info.get("abs_path", "")
+        cfg_now = load_settings()
+        current_file = cfg_now.get('current_playing', {}).get('abs_path', '')
+        if current_file and os.path.isabs(current_file) and os.path.exists(current_file):
+            try:
+                current_rel = os.path.relpath(current_file, MUSIC_DIR).replace("\\", "/")
+            except Exception:
+                current_rel = ""
     except Exception:
-        pass
-    return render_template("index.html", tree=tree, current_file=current_file)
+        current_file = ""
+    return render_template("index.html", tree=tree, current_file=current_file, current_rel=current_rel)
 
 # 注册 player 蓝图（放在所有依赖定义之后，避免循环导入问题）
 from player import player_bp
@@ -338,8 +401,12 @@ def is_mpv_running():
 
 import requests
 
-SPOTIFY_CLIENT_ID = "7aa37cc01eaa4bff8593c76c61915352"
-SPOTIFY_CLIENT_SECRET = "385dcc586ad44304a98099e4694aae85"
+SPOTIFY_CLIENT_ID = _cfg.get("SPOTIFY_CLIENT_ID", "")
+SPOTIFY_CLIENT_SECRET = _cfg.get("SPOTIFY_CLIENT_SECRET", "")
+
+# 简单内存缓存：歌手信息（避免频繁请求 Spotify）
+_ARTIST_INFO_CACHE = {}
+_ARTIST_INFO_TTL = 6 * 3600  # 6 小时
 
 def get_spotify_token():
     url = "https://accounts.spotify.com/api/token"
@@ -360,6 +427,37 @@ def get_artist_image(artist_name):
         return items[0]["images"][0]["url"]
     return ""
 
+def get_artist_full_info(artist_name: str):
+    now = time.time()
+    key = artist_name.lower().strip()
+    v = _ARTIST_INFO_CACHE.get(key)
+    if v and now - v['ts'] < _ARTIST_INFO_TTL:
+        return v['data']
+    token = get_spotify_token()
+    if not token:
+        return {}
+    url = "https://api.spotify.com/v1/search"
+    params = {"q": artist_name, "type": "artist", "limit": 1}
+    headers = {"Authorization": f"Bearer {token}"}
+    try:
+        resp = requests.get(url, params=params, headers=headers, timeout=6)
+        item = resp.json().get("artists", {}).get("items", [])
+        if not item:
+            data = {}
+        else:
+            a = item[0]
+            data = {
+                "name": a.get("name"),
+                "genres": a.get("genres", [])[:5],
+                "popularity": a.get("popularity"),
+                "followers": a.get("followers", {}).get("total"),
+                "image": (a.get("images") or [{}])[0].get("url", "")
+            }
+        _ARTIST_INFO_CACHE[key] = {"ts": now, "data": data}
+        return data
+    except Exception:
+       return {}
+
 
 @app.route("/artist_image/<artist>")
 def artist_image(artist):
@@ -369,6 +467,14 @@ def artist_image(artist):
     except Exception as e:
         return {"url": ""}
 
+@app.route("/artist_info/<artist>")
+def artist_info(artist):
+    try:
+        data = get_artist_full_info(artist)
+        return {"status": "OK", "data": data}
+    except Exception:
+        return {"status": "ERROR", "data": {}}
+
 # 新增：专辑封面接口，优先尝试Spotify API
 @app.route("/album_cover/<artist>/<track>")
 def album_cover(artist, track):
@@ -376,19 +482,29 @@ def album_cover(artist, track):
         token = get_spotify_token()
         if not token:
             return {"url": ""}
+
         api_url = "https://api.spotify.com/v1/search"
-        params = {
-            "q": f"track:{track} artist:{artist}",
-            "type": "track",
-            "limit": 1
-        }
         headers = {"Authorization": f"Bearer {token}"}
-        resp = requests.get(api_url, params=params, headers=headers)
-        items = resp.json().get("tracks", {}).get("items", [])
-        if items and items[0].get("album", {}).get("images"):
-            url = items[0]["album"]["images"][0]["url"]
-        else:
-            url = ""
+
+        def search(q):
+            resp = requests.get(api_url, params={"q": q, "type": "track", "limit": 1}, headers=headers, timeout=6)
+            j = resp.json()
+            items = j.get("tracks", {}).get("items", [])
+            if items and items[0].get("album", {}).get("images"):
+                return items[0]["album"]["images"][0]["url"]
+            return ""
+
+        artist_clean = artist.strip()
+        track_clean = track.strip()
+
+        url = ""
+        # 优先：同时包含 artist + track（若 artist 非空）
+        if artist_clean:
+            url = search(f"track:{track_clean} artist:{artist_clean}")
+        # 回退：只用 track 搜索
+        if not url:
+            url = search(f"track:{track_clean}") or search(track_clean)
+
         return {"url": url}
     except Exception as e:
         return {"url": ""}
@@ -397,6 +513,5 @@ def album_cover(artist, track):
 
 
 if __name__ == "__main__":
-    # 不再自动启动 mpv，只运行 Flask
-    #c:\mpv\mpv.exe --input-ipc-server=\\.\pipe\mpv-pipe --idle=yes --force-window=no
-    app.run(host="0.0.0.0", port=8000, debug=True)
+    # 不再自动启动 mpv，只运行 Flask，端口与 host 从配置读取
+    app.run(host=_cfg.get("FLASK_HOST", "0.0.0.0"), port=_cfg.get("FLASK_PORT", 8000), debug=_cfg.get("DEBUG", False))
