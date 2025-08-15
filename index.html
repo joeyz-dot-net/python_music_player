@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <title>🎵点歌台</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <link rel="stylesheet" href="static/style.css">
+</head>
+<body>
+  <h1>🎶 点歌台</h1>
+  <div class="volume-bar">
+    <label for="volume">🔊 音量：</label>
+    <input type="range" id="volume" min="0" max="100" value="80" oninput="setVolume(this.value)">
+  </div>
+
+  {% macro render_node(node, root=False) %}
+  {% if root %}
+  <div class="root-node">
+    <div class="flex-row-wrap">
+      {% for file in node.files %}
+        
+        <div class="song-card track{% if file.abs == current_file %} playing{% endif %}" onclick="play('{{ file.rel }}')">
+          {{ song_title }}
+          <div class="song-info">{{ song_title }}</div>
+        </div>
+      {% endfor %}
+    </div>
+    <div class="dir-grid">
+      {% for dir in node.dirs %}
+      <div class="dir-item">
+       
+        <img class="album-cover large" src="{{ artist_photo }}" data-artist="{{ dir.name }}" data-default="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f4bf.png" alt="{{ dir.name }}">
+        <span class="dir-name">{{ dir.name }}</span>
+        <div class="dir-files">
+          <div class="flex-row-wrap">
+            {% for file in dir.files %}
+              {% set song_title = file.name.rsplit('.',1)[0][:18] %}
+              <div class="song-card track{% if file.abs == current_file %} playing{% endif %}" onclick="play('{{ file.rel }}')">
+                <img class="album-cover small" src="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f4bf.png" data-artist="{{ dir.name }}" data-track="{{ song_title }}" data-default="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f4bf.png" alt="{{ song_title }}">
+                <div class="song-info">{{ song_title }}<small>{{ dir.name }}</small></div>
+              </div>
+            {% endfor %}
+          </div>
+          {% for sub in dir.dirs %}
+            {{ render_node(sub) }}
+          {% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% else %}
+  <details>
+    <summary>
+     
+      <img class="album-cover large" src="{{ artist_photo }}" data-artist="{{ node.name }}" data-default="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f4bf.png" alt="{{ node.name }}">
+      <span class="dir-name">{{ node.name }}</span>
+    </summary>
+    <div class="dir-files">
+      <div class="flex-row-wrap">
+        {% for file in node.files %}
+          {% set song_title = file.name.rsplit('.',1)[0][:18] %}
+          <div class="song-card track{% if file.abs == current_file %} playing{% endif %}" onclick="play('{{ file.rel }}')">
+            <img class="album-cover small" src="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f4bf.png" data-artist="{{ node.name }}" data-track="{{ song_title }}" data-default="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f4bf.png" alt="{{ song_title }}">
+            <div class="song-info">{{ song_title }}<small>{{ node.name }}</small></div>
+          </div>
+        {% endfor %}
+      </div>
+      {% for d in node.dirs %}
+        {{ render_node(d) }}
+      {% endfor %}
+    </div>
+  </details>
+  {% endif %}
+  {% endmacro %}
+
+  {{ render_node(tree, True) }}
+
+<script src="static/main.js"></script>
+</body>
+</html>
+<script>
+function play(rel) {
+  const now = Date.now();
+  if (now - lastPlayTime < 3000) return; // 3秒内只允许一次播放
+  lastPlayTime = now;
+
+  // 移除所有高亮
+  document.querySelectorAll(".track").forEach(div => {
+    div.classList.remove("playing");
+  });
+
+  // 添加高亮到当前播放项
+  const current = document.querySelector(`.track[onclick*="'${rel}'"]`);
+  if (current) current.classList.add("playing");
+
+  fetch("/play", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: "path=" + encodeURIComponent(rel)
+  })
+  .then(res => res.text())
+  .then(data => {
+    // 不再 reload，直接高亮
+    // location.reload();
+  });
+}
+
+    let lastVolumeSetTime = 0;
+    function setVolume(val) {
+      const now = Date.now();
+      if (now - lastVolumeSetTime < 1000) return; // 1秒内只允许一次
+      lastVolumeSetTime = now;
+      fetch("/volume", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: "level=" + val
+      });
+    }
+
+document.addEventListener("DOMContentLoaded", function() {
+  // 自动获取网络歌手头像和专辑封面
+  const artistPhotoCache = {};
+  document.querySelectorAll("img.album-cover").forEach(function(img) {
+    const artist = img.getAttribute("data-artist");
+    const track = img.getAttribute("data-track");
+    const defaultUrl = img.getAttribute("data-default");
+    if (!artist) return;
+    // 先尝试本地图片，失败后自动获取网络头像
+    img.onerror = function() {
+      // 歌手头像优先
+      fetch("/artist_image/" + encodeURIComponent(artist))
+        .then(res => res.json())
+        .then(data => {
+          if (data.url) {
+            img.src = data.url;
+            img.style.display = "inline-block";
+            artistPhotoCache[artist] = data.url;
+          } else {
+            img.src = defaultUrl;
+            img.style.display = "inline-block";
+          }
+        })
+        .catch(() => {
+          img.src = defaultUrl;
+          img.style.display = "inline-block";
+        });
+    };
+    // 如果有track，尝试获取专辑封面
+    if (track) {
+      fetch("/album_cover/" + encodeURIComponent(artist) + "/" + encodeURIComponent(track))
+        .then(res => res.json())
+        .then(data => {
+          if (data.url) {
+            img.src = data.url;
+            img.style.display = "inline-block";
+          }
+        });
+    }
+  });
+
+  // 目录卡片点击展开/收起
+  document.querySelectorAll('.dir-item').forEach(function(item) {
+    item.addEventListener('click', function(e) {
+      // 避免点击歌曲时触发目录展开
+      if (e.target.closest('.track')) return;
+      // 只展开当前，收起其他
+      document.querySelectorAll('.dir-item.active').forEach(function(active) {
+        if (active !== item) active.classList.remove('active');
+      });
+      item.classList.toggle('active');
+    });
+  });
+});
+  </script>
+</body>
+</html>

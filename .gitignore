@@ -1,0 +1,29 @@
+# Python bytecode / cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+.env/
+
+# Build / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
+
+# Logs / runtime
+*.log
+
+# App runtime state files (optional ignore; uncomment if not needed in repo)
+# current_playing.json
+# static/album_cover_cache.json
+
