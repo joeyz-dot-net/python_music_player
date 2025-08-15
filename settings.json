@@ -16,9 +16,9 @@
   "APP_USERNAME": "admin",
   "APP_PASSWORD": "change_this",
   "current_playing": {
-    "abs_path": "Z:\\ETC\\Lament of the Highborne.wav",
-    "rel": "ETC/Lament of the Highborne.wav",
-    "index": 85,
-    "ts": 1755286837
+    "abs_path": "Z:\\Nana\\Darkman - Nana Darkman、Booya Family、Nana.flac",
+    "rel": "Nana/Darkman - Nana Darkman、Booya Family、Nana.flac",
+    "index": 364,
+    "ts": 1755288232
   }
 }

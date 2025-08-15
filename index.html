@@ -2,19 +2,29 @@
 <html lang="zh-CN">
 <head>
 	<meta charset="UTF-8" />
+	<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
 	<title>音乐库</title>
 	<link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
 	<header>
 		<h1>音乐库</h1>
-		<div class="toolbar">
-			<button id="expandAll">展开全部</button>
-			<button id="collapseAll">折叠全部</button>
-			<span id="status"></span>
+		<div class="toolbar btn-group" role="group" aria-label="树操作">
+			<button id="expandAll" class="btn" aria-label="展开全部">
+				<svg viewBox="0 0 24 24" class="icon" aria-hidden="true"><path d="M7 10l5 5 5-5H7z" fill="currentColor"/></svg>
+				<span class="label">展开</span>
+			</button>
+			<button id="collapseAll" class="btn" aria-label="折叠全部">
+				<svg viewBox="0 0 24 24" class="icon" aria-hidden="true"><path d="M7 14l5-5 5 5H7z" fill="currentColor"/></svg>
+				<span class="label">折叠</span>
+			</button>
 		</div>
 	</header>
-	<div id="tree"></div>
+	<main id="tree" aria-label="文件列表"></main>
+	<footer id="playerBar">
+		<div id="nowPlaying">未播放</div>
+		<div id="progWrap"><div id="progBar"></div></div>
+	</footer>
 		<script id="boot-data" type="application/json">{{ {'tree': tree, 'musicDir': music_dir}|tojson }}</script>
 	<script src="/static/main.js"></script>
 </body>
