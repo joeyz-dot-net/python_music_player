@@ -36,6 +36,13 @@ PIPE_NAME = cfg.get('PIPE_NAME', r'\\.\pipe\mpv-pipe')
 ALLOWED = set(cfg.get('ALLOWED_EXTENSIONS', ['.mp3', '.wav', '.flac']))
 MPV_CMD = cfg.get('MPV_CMD') or cfg.get('MPV') or ''
 
+# 播放列表 & 自动播放
+PLAYLIST = []            # 存储相对路径（相对 MUSIC_DIR）
+CURRENT_INDEX = -1
+_AUTO_THREAD = None
+_STOP_FLAG = False
+_REQ_ID = 0
+
 # =========== 文件树 / 安全路径 ===========
 def safe_path(rel: str):
 	base = os.path.abspath(MUSIC_DIR)
@@ -107,6 +114,91 @@ def mpv_command(cmd_list):
 	except Exception as e:
 		raise RuntimeError(f'MPV 管道写入失败: {e}')
 
+def mpv_request(payload: dict):
+	# 简单同步请求/响应
+	with open(PIPE_NAME, 'r+b', 0) as f:
+		f.write((json.dumps(payload)+'\n').encode('utf-8'))
+		f.flush()
+		while True:
+			line = f.readline()
+			if not line:
+				break
+			try:
+				obj = json.loads(line.decode('utf-8','ignore'))
+			except Exception:
+				continue
+			if obj.get('request_id') == payload.get('request_id'):
+				return obj
+	return None
+
+def mpv_get(prop: str):
+	global _REQ_ID
+	_REQ_ID += 1
+	req = {"command":["get_property", prop], "request_id": _REQ_ID}
+	resp = mpv_request(req)
+	if not resp:
+		return None
+	return resp.get('data')
+
+def _build_playlist():
+	abs_root = os.path.abspath(MUSIC_DIR)
+	tracks = []
+	for dp, _, files in os.walk(abs_root):
+		for f in files:
+			ext = os.path.splitext(f)[1].lower()
+			if ext in ALLOWED:
+				rel = os.path.relpath(os.path.join(dp,f), abs_root).replace('\\','/')
+				tracks.append(rel)
+	tracks.sort(key=str.lower)
+	return tracks
+
+def _play_index(idx: int):
+	global CURRENT_INDEX
+	if idx < 0 or idx >= len(PLAYLIST):
+		return False
+	rel = PLAYLIST[idx]
+	abs_file = safe_path(rel)
+	mpv_command(['loadfile', abs_file, 'replace'])
+	CURRENT_INDEX = idx
+	update_settings({'current_playing': {'abs_path': abs_file, 'rel': rel, 'index': idx, 'ts': int(time.time())}})
+	return True
+
+def _next_track():
+	if CURRENT_INDEX < 0:
+		return False
+	nxt = CURRENT_INDEX + 1
+	if nxt >= len(PLAYLIST):
+		return False
+	return _play_index(nxt)
+
+def _prev_track():
+	if CURRENT_INDEX < 0:
+		return False
+	prv = CURRENT_INDEX - 1
+	if prv < 0:
+		return False
+	return _play_index(prv)
+
+def _auto_loop():
+	while not _STOP_FLAG:
+		if CURRENT_INDEX >= 0:
+			try:
+				eof = mpv_get('eof-reached')
+				if eof is True:
+					if not _next_track():
+						time.sleep(1.2)
+						continue
+			except Exception:
+				pass
+		time.sleep(0.9)
+
+def _ensure_auto_thread():
+	global _AUTO_THREAD
+	if _AUTO_THREAD and _AUTO_THREAD.is_alive():
+		return
+	_AUTO_THREAD = threading.Thread(target=_auto_loop, daemon=True)
+	_AUTO_THREAD.start()
+
 # =========== 路由 ===========
 @APP.route('/')
 def index():
@@ -122,16 +214,61 @@ def play_route():
 	try:
 		if not ensure_mpv():
 			return jsonify({'status':'ERROR','error':'mpv 启动失败'}), 400
-		abs_file = safe_path(rel)
-		mpv_command(['loadfile', abs_file, 'replace'])
-		update_settings({'current_playing': {'abs_path': abs_file, 'rel': rel, 'ts': int(time.time())}})
-		return jsonify({'status':'OK','rel':rel})
+		global PLAYLIST, CURRENT_INDEX
+		if not PLAYLIST or rel not in PLAYLIST:
+			PLAYLIST = _build_playlist()
+		if rel not in PLAYLIST:
+			return jsonify({'status':'ERROR','error':'文件不在列表'}), 400
+		idx = PLAYLIST.index(rel)
+		if not _play_index(idx):
+			return jsonify({'status':'ERROR','error':'播放失败'}), 400
+		_ensure_auto_thread()
+		return jsonify({'status':'OK','rel':rel,'index':idx,'total':len(PLAYLIST)})
 	except Exception as e:
 		return jsonify({'status':'ERROR','error':str(e)}), 400
 
 @APP.route('/tree')
 def tree_json():
 	return jsonify({'status':'OK','tree':build_tree()})
+
+@APP.route('/next', methods=['POST'])
+def api_next():
+	if not ensure_mpv():
+		return jsonify({'status':'ERROR','error':'mpv 未就绪'}), 400
+	if _next_track():
+		return jsonify({'status':'OK','rel': PLAYLIST[CURRENT_INDEX], 'index': CURRENT_INDEX, 'total': len(PLAYLIST)})
+	return jsonify({'status':'ERROR','error':'没有下一首'}), 400
+
+@APP.route('/prev', methods=['POST'])
+def api_prev():
+	if not ensure_mpv():
+		return jsonify({'status':'ERROR','error':'mpv 未就绪'}), 400
+	if _prev_track():
+		return jsonify({'status':'OK','rel': PLAYLIST[CURRENT_INDEX], 'index': CURRENT_INDEX, 'total': len(PLAYLIST)})
+	return jsonify({'status':'ERROR','error':'没有上一首'}), 400
+
+@APP.route('/status')
+def api_status():
+	"""返回当前播放状态，所有客户端轮询以实现共享可见性。"""
+	playing = load_settings().get('current_playing') or {}
+	mpv_info = {}
+	# 仅在 mpv 管道可用时尝试获取实时播放属性
+	try:
+		with open(PIPE_NAME, 'wb') as _:
+			try:
+				pos = mpv_get('time-pos')
+				dur = mpv_get('duration')
+				paused = mpv_get('pause')
+				mpv_info = {
+					'time': pos,
+					'duration': dur,
+					'paused': paused
+				}
+			except Exception:
+				pass
+	except Exception:
+		pass
+	return jsonify({'status':'OK','playing': playing, 'mpv': mpv_info})
 
 if __name__ == '__main__':
 	APP.run(host=cfg.get('FLASK_HOST','0.0.0.0'), port=cfg.get('FLASK_PORT',8000), debug=cfg.get('DEBUG',False))
