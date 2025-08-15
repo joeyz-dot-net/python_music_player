@@ -14,11 +14,5 @@
   "DEBUG": true,
   "MPV_CMD": "c:\\mpv\\mpv.exe --input-ipc-server=\\\\.\\pipe\\mpv-pipe --idle=yes --force-window=no",
   "APP_USERNAME": "admin",
-  "APP_PASSWORD": "change_this",
-  "current_playing": {
-    "abs_path": "Z:\\Nana\\Darkman - Nana Darkman、Booya Family、Nana.flac",
-    "rel": "Nana/Darkman - Nana Darkman、Booya Family、Nana.flac",
-    "index": 364,
-    "ts": 1755288232
-  }
+  "APP_PASSWORD": "change_this"
 }

@@ -42,6 +42,7 @@ CURRENT_INDEX = -1
 _AUTO_THREAD = None
 _STOP_FLAG = False
 _REQ_ID = 0
+CURRENT_META = {}  # 仅内存保存当前播放信息，不写入 settings.json
 
 # =========== 文件树 / 安全路径 ===========
 def safe_path(rel: str):
@@ -140,6 +141,13 @@ def mpv_get(prop: str):
 		return None
 	return resp.get('data')
 
+def mpv_set(prop: str, value):
+	try:
+		mpv_command(['set_property', prop, value])
+		return True
+	except Exception:
+		return False
+
 def _build_playlist():
 	abs_root = os.path.abspath(MUSIC_DIR)
 	tracks = []
@@ -153,14 +161,14 @@ def _build_playlist():
 	return tracks
 
 def _play_index(idx: int):
-	global CURRENT_INDEX
+	global CURRENT_INDEX, CURRENT_META
 	if idx < 0 or idx >= len(PLAYLIST):
 		return False
 	rel = PLAYLIST[idx]
 	abs_file = safe_path(rel)
 	mpv_command(['loadfile', abs_file, 'replace'])
 	CURRENT_INDEX = idx
-	update_settings({'current_playing': {'abs_path': abs_file, 'rel': rel, 'index': idx, 'ts': int(time.time())}})
+	CURRENT_META = {'abs_path': abs_file, 'rel': rel, 'index': idx, 'ts': int(time.time())}
 	return True
 
 def _next_track():
@@ -249,8 +257,8 @@ def api_prev():
 
 @APP.route('/status')
 def api_status():
-	"""返回当前播放状态，所有客户端轮询以实现共享可见性。"""
-	playing = load_settings().get('current_playing') or {}
+	"""返回当前播放状态（仅内存），所有客户端轮询实现共享可见性。"""
+	playing = CURRENT_META if CURRENT_META else {}
 	mpv_info = {}
 	# 仅在 mpv 管道可用时尝试获取实时播放属性
 	try:
@@ -259,16 +267,38 @@ def api_status():
 				pos = mpv_get('time-pos')
 				dur = mpv_get('duration')
 				paused = mpv_get('pause')
+				vol = mpv_get('volume')
 				mpv_info = {
 					'time': pos,
 					'duration': dur,
-					'paused': paused
+					'paused': paused,
+					'volume': vol
 				}
 			except Exception:
 				pass
 	except Exception:
 		pass
 	return jsonify({'status':'OK','playing': playing, 'mpv': mpv_info})
+
+@APP.route('/volume', methods=['POST'])
+def api_volume():
+	from flask import request
+	# form: value 可选(0-100). 不提供则返回当前音量
+	if not ensure_mpv():
+		return jsonify({'status':'ERROR','error':'mpv 未就绪'}), 400
+	val = request.form.get('value')
+	if val is None or val == '':
+		cur = mpv_get('volume')
+		return jsonify({'status':'OK','volume': cur})
+	try:
+		f = float(val)
+	except ValueError:
+		return jsonify({'status':'ERROR','error':'数值非法'}), 400
+	if f < 0: f = 0
+	if f > 130: f = 130
+	if not mpv_set('volume', f):
+		return jsonify({'status':'ERROR','error':'设置失败'}), 400
+	return jsonify({'status':'OK','volume': f})
 
 if __name__ == '__main__':
 	APP.run(host=cfg.get('FLASK_HOST','0.0.0.0'), port=cfg.get('FLASK_PORT',8000), debug=cfg.get('DEBUG',False))

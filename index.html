@@ -9,22 +9,15 @@
 <body>
 	<header>
 		<h1>音乐库</h1>
-		<div class="toolbar btn-group" role="group" aria-label="树操作">
-			<button id="expandAll" class="btn" aria-label="展开全部">
-				<svg viewBox="0 0 24 24" class="icon" aria-hidden="true"><path d="M7 10l5 5 5-5H7z" fill="currentColor"/></svg>
-				<span class="label">展开</span>
-			</button>
-			<button id="collapseAll" class="btn" aria-label="折叠全部">
-				<svg viewBox="0 0 24 24" class="icon" aria-hidden="true"><path d="M7 14l5-5 5 5H7z" fill="currentColor"/></svg>
-				<span class="label">折叠</span>
-			</button>
+		<div class="toolbar">
+			<input id="searchBox" type="text" placeholder="搜索..." aria-label="搜索文件" />
+			<button id="expandAll" aria-label="展开全部">展开</button>
+			<button id="collapseAll" aria-label="折叠全部">折叠</button>
 		</div>
 	</header>
 	<main id="tree" aria-label="文件列表"></main>
-	<footer id="playerBar">
-		<div id="nowPlaying">未播放</div>
-		<div id="progWrap"><div id="progBar"></div></div>
-	</footer>
+	<footer id="playerBar"><div id="nowPlaying">未播放</div><div class="volWrap"><input id="volSlider" type="range" min="0" max="130" value="50" /></div></footer>
+	<div id="playerProgress" aria-hidden="true"><div id="playerProgressFill"></div></div>
 		<script id="boot-data" type="application/json">{{ {'tree': tree, 'musicDir': music_dir}|tojson }}</script>
 	<script src="/static/main.js"></script>
 </body>
