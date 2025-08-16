@@ -6,6 +6,7 @@
 
 	function buildNode(node){
 		const li = el('li','dir');
+		if(node.rel) li.dataset.rel = node.rel;
 		const label = el('div','label');
 		const arrow = el('span','arrow','▶');
 		const nameSpan = el('span','name', node.rel? node.name : '根目录');
@@ -16,6 +17,7 @@
 		(node.dirs||[]).forEach(d=>ul.appendChild(buildNode(d)));
 		(node.files||[]).forEach(f=>{
 			const fi = el('li','file',f.name);
+			fi.dataset.rel = f.rel;
 			fi.onclick = () => play(f.rel, fi);
 			ul.appendChild(fi);
 		});
@@ -47,8 +49,26 @@
 			rootView = filtered || {dirs:[],files:[]};
 		}
 		(rootView.dirs||[]).forEach(d=>topUL.appendChild(buildNode(d)));
-		(rootView.files||[]).forEach(f=>{ const fi = el('li','file',f.name); fi.onclick=()=>play(f.rel,fi); topUL.appendChild(fi); });
+		(rootView.files||[]).forEach(f=>{ const fi = el('li','file',f.name); fi.dataset.rel = f.rel; fi.onclick=()=>play(f.rel,fi); topUL.appendChild(fi); });
 		ROOT.appendChild(topUL);
+	}
+
+	let lastLocatedRel = null;
+	function expandTo(rel){
+		if(!rel) return;
+		if(rel === lastLocatedRel) return; // 防止频繁跳动
+		const parts = rel.split('/');
+		let acc = '';
+		for(let i=0;i<parts.length-1;i++){
+			acc = acc ? acc + '/' + parts[i] : parts[i];
+			const dir = Array.from(document.querySelectorAll('li.dir')).find(d=>d.dataset.rel===acc);
+			if(dir){ dir.classList.remove('collapsed'); }
+		}
+		const fileEl = Array.from(document.querySelectorAll('li.file')).find(f=>f.dataset.rel===rel);
+		if(fileEl){
+			fileEl.scrollIntoView({block:'center'});
+			lastLocatedRel = rel;
+		}
 	}
 
 	function play(rel, dom){
@@ -88,12 +108,12 @@
 			}
 			bar.textContent = label;
 			document.querySelectorAll('.file.playing').forEach(e=>e.classList.remove('playing'));
-			// 高亮当前
-			const nodes = document.querySelectorAll('#tree .file');
-			nodes.forEach(n=>{ if(n.textContent === rel.split('/').pop()) { // 名称匹配最后一段
-				// 进一步校验路径: 暂无全路径引用，简单设置
-				n.classList.add('playing');
-			}});
+			// 高亮 & 定位
+			const target = Array.from(document.querySelectorAll('#tree .file')).find(f=>f.dataset.rel===rel);
+			if(target){
+				target.classList.add('playing');
+				expandTo(rel);
+			}
 		}).catch(()=>{}).finally(()=> setTimeout(pollStatus, 2000));
 	}
 
@@ -104,6 +124,24 @@
 	if(sb){
 		let t; sb.addEventListener('input', ()=>{ clearTimeout(t); t=setTimeout(render, 150); });
 	}
+
+	// 播放控制按钮
+	const prevBtn = document.getElementById('prevBtn');
+	const nextBtn = document.getElementById('nextBtn');
+	const shuffleBtn = document.getElementById('shuffleBtn');
+	if(prevBtn) prevBtn.onclick = ()=>{
+		fetch('/prev', {method:'POST'}).then(r=>r.json()).then(j=>{ if(j.status!=='OK'){ console.warn(j.error); } });
+	};
+	if(nextBtn) nextBtn.onclick = ()=>{
+		fetch('/next', {method:'POST'}).then(r=>r.json()).then(j=>{ if(j.status!=='OK'){ console.warn(j.error); } });
+	};
+	if(shuffleBtn) shuffleBtn.onclick = ()=>{
+		fetch('/shuffle', {method:'POST'}).then(r=>r.json()).then(j=>{
+			if(j.status==='OK'){
+				shuffleBtn.dataset.on = j.shuffle ? '1':'0';
+			}
+		});
+	};
 
 	// 音量滑块事件
 	const vol = document.getElementById('volSlider');

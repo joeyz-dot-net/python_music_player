@@ -64,6 +64,7 @@ _AUTO_THREAD = None
 _STOP_FLAG = False
 _REQ_ID = 0
 CURRENT_META = {}  # 仅内存保存当前播放信息，不写入 settings.json
+SHUFFLE = False
 
 # =========== 文件树 / 安全路径 ===========
 def safe_path(rel: str):
@@ -200,16 +201,37 @@ def _play_index(idx: int):
 	return True
 
 def _next_track():
+	import random
 	if CURRENT_INDEX < 0:
 		return False
+	if SHUFFLE and len(PLAYLIST) > 1:
+		# 随机选择一个不同的索引
+		choices = list(range(len(PLAYLIST)))
+		try:
+			choices.remove(CURRENT_INDEX)
+		except ValueError:
+			pass
+		if not choices:
+			return False
+		return _play_index(random.choice(choices))
 	nxt = CURRENT_INDEX + 1
 	if nxt >= len(PLAYLIST):
 		return False
 	return _play_index(nxt)
 
 def _prev_track():
+	import random
 	if CURRENT_INDEX < 0:
 		return False
+	if SHUFFLE and len(PLAYLIST) > 1:
+		choices = list(range(len(PLAYLIST)))
+		try:
+			choices.remove(CURRENT_INDEX)
+		except ValueError:
+			pass
+		if not choices:
+			return False
+		return _play_index(random.choice(choices))
 	prv = CURRENT_INDEX - 1
 	if prv < 0:
 		return False
@@ -244,11 +266,11 @@ def _auto_loop():
 				print('[INFO] 当前曲目已结束，尝试播放下一首...')
 				if not _next_track():
 					# 到末尾，等待再尝试
-					time.sleep(1.2)
+					time.sleep(5)
 					continue
 		except Exception:
 			pass
-		time.sleep(0.9)
+		time.sleep(5)
 
 def _ensure_auto_thread():
 	global _AUTO_THREAD
@@ -332,6 +354,13 @@ def api_status():
 	except Exception:
 		pass
 	return jsonify({'status':'OK','playing': playing, 'mpv': mpv_info})
+
+@APP.route('/shuffle', methods=['POST'])
+def api_shuffle():
+	"""切换随机播放模式."""
+	global SHUFFLE
+	SHUFFLE = not SHUFFLE
+	return jsonify({'status':'OK','shuffle': SHUFFLE})
 
 @APP.route('/playlist')
 def api_playlist():

@@ -12,6 +12,7 @@ ul { list-style:none; margin:0; padding-left:16px; }
 .playing { color:#4fd1a5; font-weight:600; }
 .toolbar { margin-left:auto; display:flex; gap:10px; }
 button { background:#3a3f46; color:#eee; border:1px solid #555; border-radius:6px; padding:6px 14px; cursor:pointer; font-size:13px; line-height:1.2; }
+#shuffleBtn[data-on="1"] { background:#4fd1a5; color:#111; }
 button:active { transform:translateY(1px); }
 button:hover { background:#4a5058; }
 .empty { opacity:.5; font-style:italic; }
