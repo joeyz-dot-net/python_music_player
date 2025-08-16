@@ -32,9 +32,30 @@ MUSIC_DIR = cfg.get('MUSIC_DIR', 'Z:')
 if len(MUSIC_DIR) == 2 and MUSIC_DIR[1] == ':' and MUSIC_DIR[0].isalpha():
 	MUSIC_DIR += '\\'
 MUSIC_DIR = os.path.abspath(MUSIC_DIR)
-PIPE_NAME = cfg.get('PIPE_NAME', r'\\.\pipe\mpv-pipe')
 ALLOWED = set(cfg.get('ALLOWED_EXTENSIONS', ['.mp3', '.wav', '.flac']))
 MPV_CMD = cfg.get('MPV_CMD') or cfg.get('MPV') or ''
+
+def _extract_pipe_name(cmd: str, fallback: str = r'\\.\\pipe\\mpv-pipe') -> str:
+	"""从 MPV_CMD 中解析 --input-ipc-server 值; 支持两种形式:
+	1) --input-ipc-server=\\.\\pipe\\mpv-pipe
+	2) --input-ipc-server \\.\\pipe\\mpv-pipe
+	若解析失败返回 fallback.
+	"""
+	if not cmd:
+		return fallback
+	parts = cmd.split()
+	for i,p in enumerate(parts):
+		if p.startswith('--input-ipc-server='):
+			val = p.split('=',1)[1].strip().strip('"')
+			return val or fallback
+		if p == '--input-ipc-server' and i+1 < len(parts):
+			val = parts[i+1].strip().strip('"')
+			if val and not val.startswith('--'):
+				return val
+	return fallback
+
+# 兼容: 若 settings 仍含 PIPE_NAME 则优先; 否则从 MPV_CMD 解析
+PIPE_NAME = cfg.get('PIPE_NAME') or _extract_pipe_name(MPV_CMD)
 
 # 播放列表 & 自动播放
 PLAYLIST = []            # 存储相对路径（相对 MUSIC_DIR）
@@ -160,6 +181,13 @@ def _build_playlist():
 	tracks.sort(key=str.lower)
 	return tracks
 
+def _ensure_playlist(force: bool = False):
+	"""确保内存 PLAYLIST 存在; force=True 时强制重建."""
+	global PLAYLIST
+	if force or not PLAYLIST:
+		PLAYLIST = _build_playlist()
+	return PLAYLIST
+
 def _play_index(idx: int):
 	global CURRENT_INDEX, CURRENT_META
 	if idx < 0 or idx >= len(PLAYLIST):
@@ -188,21 +216,44 @@ def _prev_track():
 	return _play_index(prv)
 
 def _auto_loop():
+	print('[INFO] 自动播放线程已启动')
 	while not _STOP_FLAG:
-		if CURRENT_INDEX >= 0:
-			try:
-				eof = mpv_get('eof-reached')
-				if eof is True:
-					if not _next_track():
-						time.sleep(1.2)
-						continue
-			except Exception:
-				pass
+		print('[DEBUG] 自动播放检查...')
+		if CURRENT_INDEX < 0:
+			# 没有正在播放的，尝试自动加载并播第一首
+			_ensure_playlist()
+			if PLAYLIST:
+				_play_index(0)
+				time.sleep(1.0)
+				continue
+		try:
+			# 侦测曲目结束: 优先 eof-reached, 其次 time-pos≈duration, 再次 idle-active
+			ended = False
+			pos = mpv_get('time-pos')
+			dur = mpv_get('duration')
+			eof = mpv_get('eof-reached')  # 可能为 None
+			if eof is True:
+				ended = True
+			elif isinstance(pos,(int,float)) and isinstance(dur,(int,float)) and dur>0 and (dur - pos) <= 0.3:
+				ended = True
+			else:
+				idle = mpv_get('idle-active')
+				if idle is True and (pos is None or (isinstance(pos,(int,float)) and pos==0)):
+					ended = True
+			if ended:
+				print('[INFO] 当前曲目已结束，尝试播放下一首...')
+				if not _next_track():
+					# 到末尾，等待再尝试
+					time.sleep(1.2)
+					continue
+		except Exception:
+			pass
 		time.sleep(0.9)
 
 def _ensure_auto_thread():
 	global _AUTO_THREAD
 	if _AUTO_THREAD and _AUTO_THREAD.is_alive():
+		print('[INFO] 自动播放线程已存在')
 		return
 	_AUTO_THREAD = threading.Thread(target=_auto_loop, daemon=True)
 	_AUTO_THREAD.start()
@@ -211,6 +262,8 @@ def _ensure_auto_thread():
 @APP.route('/')
 def index():
 	tree = build_tree()
+	#_AUTO_THREAD = True
+	_ensure_auto_thread()
 	return render_template('index.html', tree=tree, music_dir=MUSIC_DIR)
 
 @APP.route('/play', methods=['POST'])
@@ -279,6 +332,40 @@ def api_status():
 	except Exception:
 		pass
 	return jsonify({'status':'OK','playing': playing, 'mpv': mpv_info})
+
+@APP.route('/playlist')
+def api_playlist():
+	"""返回当前播放列表。
+
+	参数:
+	  rebuild=1  强制重建扫描
+	  offset, limit  分页 (可选)
+	"""
+	from flask import request
+	force = request.args.get('rebuild') == '1'
+	plist = _ensure_playlist(force)
+	offset = int(request.args.get('offset', '0') or 0)
+	limit = request.args.get('limit')
+	if limit is not None:
+		try:
+			limit_i = max(0, int(limit))
+		except ValueError:
+			limit_i = 0
+	else:
+		limit_i = 0
+	data = plist
+	if offset < 0: offset = 0
+	if limit_i > 0:
+		data = plist[offset: offset+limit_i]
+	return jsonify({
+		'status': 'OK',
+		'total': len(plist),
+		'index': CURRENT_INDEX,
+		'current': CURRENT_META.get('rel') if CURRENT_META else None,
+		'offset': offset,
+		'limit': limit_i or None,
+		'playlist': data
+	})
 
 @APP.route('/volume', methods=['POST'])
 def api_volume():

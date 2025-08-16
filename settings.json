@@ -1,18 +1,13 @@
 {
   "MUSIC_DIR": "Z:",
-  "PIPE_NAME": "\\\\.\\pipe\\mpv-pipe",
   "ALLOWED_EXTENSIONS": [
     ".mp3",
     ".wav",
     ".flac"
   ],
-  "SPOTIFY_CLIENT_ID": "7f2350c8a5a4482fbf6a354e08ea33b0",
-  "SPOTIFY_CLIENT_SECRET": "22a45d06cc694b64bf401e0edf275764",
-  "SPOTIFY_SCOPES": "user-read-email user-read-private",
   "FLASK_HOST": "0.0.0.0",
   "FLASK_PORT": 9000,
   "DEBUG": true,
-  "MPV_CMD": "c:\\mpv\\mpv.exe --input-ipc-server=\\\\.\\pipe\\mpv-pipe --idle=yes --force-window=no",
-  "APP_USERNAME": "admin",
-  "APP_PASSWORD": "change_this"
+  "MPV_CMD": "c:\\mpv\\mpv.exe --input-ipc-server=\\\\.\\pipe\\mpv-pipe --idle=yes --force-window=no"
+
 }
