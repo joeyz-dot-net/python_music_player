@@ -57,6 +57,14 @@ def _extract_pipe_name(cmd: str, fallback: str = r'\\.\\pipe\\mpv-pipe') -> str:
 # 兼容: 若 settings 仍含 PIPE_NAME 则优先; 否则从 MPV_CMD 解析
 PIPE_NAME = cfg.get('PIPE_NAME') or _extract_pipe_name(MPV_CMD)
 
+def mpv_pipe_exists(path: str = None) -> bool:
+	p = path or PIPE_NAME
+	try:
+		with open(p, 'wb'):
+			return True
+	except Exception:
+		return False
+
 # 播放列表 & 自动播放
 PLAYLIST = []            # 存储相对路径（相对 MUSIC_DIR）
 CURRENT_INDEX = -1
@@ -115,26 +123,40 @@ def _wait_pipe(timeout=6.0):
 	return False
 
 def ensure_mpv():
+	global PIPE_NAME
+	# 每次调用重新解析，允许运行期间修改 MPV_CMD 并热加载（若外部修改变量并重载模块则生效）
+	PIPE_NAME = _extract_pipe_name(MPV_CMD) if not cfg.get('PIPE_NAME') else cfg.get('PIPE_NAME')
 	if not MPV_CMD:
 		print('[WARN] 未配置 MPV_CMD')
 		return False
-	# 简单探测：尝试写入
-	try:
-		with open(PIPE_NAME, 'wb') as _: return True
-	except Exception:
-		pass
+	if mpv_pipe_exists():
+		return True
+	print(f'[INFO] 尝试启动 mpv: {MPV_CMD}')
 	try:
 		subprocess.Popen(MPV_CMD, shell=True)
-		return _wait_pipe()
 	except Exception as e:
-		print('[ERROR] 启动 mpv 失败:', e)
+		print('[ERROR] 启动 mpv 进程失败:', e)
 		return False
+	ready = _wait_pipe()
+	if not ready:
+		print('[ERROR] 等待 mpv 管道超时: ', PIPE_NAME)
+	return ready
 
 def mpv_command(cmd_list):
-	try:
+	# 写命令，失败时自动尝试启动一次再重试
+	def _write():
 		with open(PIPE_NAME, 'wb') as w:
 			w.write((json.dumps({'command': cmd_list})+'\n').encode('utf-8'))
+	try:
+		_write()
 	except Exception as e:
+		print(f'[WARN] 首次写入失败: {e}. 尝试 ensure_mpv 后重试...')
+		if ensure_mpv():
+			try:
+				_write()
+				return
+			except Exception as e2:
+				raise RuntimeError(f'MPV 管道写入失败(重试): {e2}')
 		raise RuntimeError(f'MPV 管道写入失败: {e}')
 
 def mpv_request(payload: dict):
@@ -266,11 +288,11 @@ def _auto_loop():
 				print('[INFO] 当前曲目已结束，尝试播放下一首...')
 				if not _next_track():
 					# 到末尾，等待再尝试
-					time.sleep(5)
+					time.sleep(10)
 					continue
 		except Exception:
 			pass
-		time.sleep(5)
+		time.sleep(10)
 
 def _ensure_auto_thread():
 	global _AUTO_THREAD
@@ -395,6 +417,18 @@ def api_playlist():
 		'limit': limit_i or None,
 		'playlist': data
 	})
+
+@APP.route('/debug/mpv')
+def api_debug_mpv():
+	info = {
+		'MPV_CMD': MPV_CMD,
+		'PIPE_NAME': PIPE_NAME,
+		'pipe_exists': mpv_pipe_exists(),
+		'playlist_len': len(PLAYLIST),
+		'current_index': CURRENT_INDEX,
+		'shuffle': 'SHUFFLE' in globals() and globals().get('SHUFFLE')
+	}
+	return jsonify({'status':'OK','info': info})
 
 @APP.route('/volume', methods=['POST'])
 def api_volume():
