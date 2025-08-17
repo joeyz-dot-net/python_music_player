@@ -27,3 +27,6 @@ dist/
 # current_playing.json
 # static/album_cover_cache.json
 
+test/cli_play.py
+app.spec
+.gitignore

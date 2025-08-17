@@ -1,38 +1,92 @@
-import os, json, threading, time, subprocess
+import os, sys, json, threading, time, subprocess, configparser
 from flask import Flask, render_template, jsonify
 
 APP = Flask(__name__, template_folder='.')
 
-CONFIG_PATH = os.path.join(os.path.dirname(__file__), 'settings.json')
+#############################################
+# 配置: settings.ini (仅使用 INI, 已彻底移除 settings.json 支持)
+#############################################
 _LOCK = threading.RLock()
 
-def _load_raw():
-	try:
-		with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
-			return json.load(f)
-	except Exception:
-		return {}
+DEFAULT_CFG = {
+	'MUSIC_DIR': 'Z:',
+	'ALLOWED_EXTENSIONS': '.mp3,.wav,.flac',  # INI 中用逗号/分号分隔
+	'FLASK_HOST': '0.0.0.0',
+	'FLASK_PORT': '9000',
+	'DEBUG': 'true',
+	'MPV_CMD': r'c:\mpv\mpv.exe --input-ipc-server=\\.\pipe\mpv-pipe --idle=yes --force-window=no'
+}
+
+def _ini_path():
+	if getattr(sys, 'frozen', False):
+		return os.path.join(os.path.dirname(sys.executable), 'settings.ini')
+	return os.path.join(os.path.dirname(__file__), 'settings.ini')
+
+def _ensure_ini_exists():
+	ini_path = _ini_path()
+	if os.path.exists(ini_path):
+		return
+	cp = configparser.ConfigParser()
+	cp['app'] = DEFAULT_CFG.copy()
+	with open(ini_path,'w',encoding='utf-8') as w:
+		cp.write(w)
+	print('[INFO] 已生成默认 settings.ini')
+
+def _read_ini_locked():
+	ini_path = _ini_path()
+	cp = configparser.ConfigParser()
+	read_ok = cp.read(ini_path, encoding='utf-8')
+	if not read_ok:
+		return DEFAULT_CFG.copy()
+	if 'app' not in cp:
+		return DEFAULT_CFG.copy()
+	raw = DEFAULT_CFG.copy()
+	for k,v in cp['app'].items():
+		raw[k.upper()] = v
+	return raw
 
 def load_settings():
 	with _LOCK:
-		return json.loads(json.dumps(_load_raw()))
+		return json.loads(json.dumps(_read_ini_locked()))  # 深拷贝
 
 def update_settings(patch: dict):
 	with _LOCK:
-		cur = _load_raw()
-		cur.update(patch)
-		tmp = CONFIG_PATH + '.tmp'
-		with open(tmp, 'w', encoding='utf-8') as w:
-			json.dump(cur, w, ensure_ascii=False, indent=2)
-		os.replace(tmp, CONFIG_PATH)
-		return cur
+		cfg = _read_ini_locked()
+		for k,v in patch.items():
+			cfg[k.upper()] = v
+		# 写回
+		cp = configparser.ConfigParser()
+		cp['app'] = {}
+		for k,v in cfg.items():
+			if k == 'ALLOWED_EXTENSIONS':
+				if isinstance(v, (list,tuple,set)):
+					cp['app'][k] = ','.join(sorted(v))
+				else:
+					cp['app'][k] = str(v)
+			else:
+				cp['app'][k] = str(v)
+		ini_path = _ini_path()
+		tmp = ini_path + '.tmp'
+		with open(tmp,'w',encoding='utf-8') as w:
+			cp.write(w)
+		os.replace(tmp, ini_path)
+		return cfg
 
+_ensure_ini_exists()
 cfg = load_settings()
+#############################################
+
+# 下面使用 cfg 不变
 MUSIC_DIR = cfg.get('MUSIC_DIR', 'Z:')
 if len(MUSIC_DIR) == 2 and MUSIC_DIR[1] == ':' and MUSIC_DIR[0].isalpha():
-	MUSIC_DIR += '\\'
+    MUSIC_DIR += '\\'
 MUSIC_DIR = os.path.abspath(MUSIC_DIR)
-ALLOWED = set(cfg.get('ALLOWED_EXTENSIONS', ['.mp3', '.wav', '.flac']))
+_ext_raw = cfg.get('ALLOWED_EXTENSIONS', '.mp3,.wav,.flac')
+if isinstance(_ext_raw, str):
+	parts = [e.strip() for e in _ext_raw.replace(';',',').split(',') if e.strip()]
+else:
+	parts = list(_ext_raw)
+ALLOWED = set([e if e.startswith('.') else '.'+e for e in parts])
 MPV_CMD = cfg.get('MPV_CMD') or cfg.get('MPV') or ''
 
 def _extract_pipe_name(cmd: str, fallback: str = r'\\.\\pipe\\mpv-pipe') -> str:
@@ -449,6 +503,8 @@ def api_volume():
 	if not mpv_set('volume', f):
 		return jsonify({'status':'ERROR','error':'设置失败'}), 400
 	return jsonify({'status':'OK','volume': f})
+
+print("Build marker:", time.time())
 
 if __name__ == '__main__':
 	APP.run(host=cfg.get('FLASK_HOST','0.0.0.0'), port=cfg.get('FLASK_PORT',8000), debug=cfg.get('DEBUG',False))
